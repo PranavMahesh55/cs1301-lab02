@@ -1,0 +1,11 @@
+{
+    "chart_title": "Weekly Study Hours by Course",
+    "description": "Made-up study hours for one week.",
+    "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+    "courses": {
+        "CS 1301": [1.5, 1.0, 2.0, 1.5, 1.0, 2.5, 1.5],
+        "MATH 1551": [1.0, 1.5, 1.0, 2.0, 0.5, 1.5, 1.0],
+        "ENGL 1101": [0.5, 1.0, 0.5, 1.0, 0.0, 2.0, 1.5],
+        "CHEM 1211K": [1.0, 0.5, 1.5, 1.0, 1.0, 2.0, 0.5]
+    }
+}

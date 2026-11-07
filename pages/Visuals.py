@@ -1,3 +1,4 @@
+import csv
 import json
 from pathlib import Path
 import statistics
@@ -92,102 +93,76 @@ else:
     st.info("Select at least one course to display the chart and statistics.")
 
 
-# PART 2: Graphs read the actual responses saved by Survey.py.
-import pandas as pd
-
+# PART 2: Read the responses from data.csv.
 st.divider()
-st.header("Part 2: Collected Study Hours")
-st.caption("Source: data.csv. Each response describes one course on one study day.")
+st.header("Part 2: Study Survey Results")
 csv_path = Path(__file__).resolve().parent.parent / "data.csv"
+with open(csv_path, "r", newline="") as file:
+    survey_rows = list(csv.DictReader(file))
 
-if not csv_path.exists() or csv_path.stat().st_size == 0:
-    st.info("Submit study hours on the Survey page to display the CSV graphs.")
+if len(survey_rows) == 0:
+    st.info("Enter data on the Survey page to see the CSV graphs.")
     st.stop()
 
-survey_data = pd.read_csv(csv_path)
-if survey_data.empty:
-    st.info("No survey responses yet. Add responses on Survey, then return here.")
-    st.stop()
+# Static bar chart: add up all the hours for each course.
+st.header("3. Total Study Hours by Course")
+totals = {}
+for row in survey_rows:
+    course = row["Category"]
+    hours = float(row["Value"])
+    if course not in totals:
+        totals[course] = 0
+    totals[course] += hours
 
-# Ignore invalid rows if the CSV was edited by hand outside the survey.
-survey_data["Value"] = pd.to_numeric(survey_data["Value"], errors="coerce")
-valid_rows = (survey_data["Category"].notna()
-              & survey_data["Category"].astype(str).str.strip().ne("")
-              & survey_data["Value"].between(0, 24))
-if not valid_rows.all():
-    st.warning("Some CSV rows have missing courses or invalid hours and were skipped.")
-survey_data = survey_data.loc[valid_rows].copy()
-if survey_data.empty:
-    st.info("Add valid survey responses with a course and 0–24 study hours.")
-    st.stop()
-
-# Static CSV bar chart: uses all valid responses, independent of the filters below.
-st.subheader("3. Total Reported Study Hours by Course")
-total_hours = survey_data.groupby("Category")["Value"].sum().sort_index()
+csv_courses = list(totals.keys())
 bar_fig, bar_ax = plt.subplots(figsize=(8, 4))
-bar_ax.bar(total_hours.index, total_hours.values)
-bar_ax.set_title("Total Study Hours from All Survey Responses")
+bar_ax.bar(csv_courses, list(totals.values()))
+bar_ax.set_title("Total Study Hours from Survey Responses")
 bar_ax.set_xlabel("Course")
-bar_ax.set_ylabel("Total Reported Study Hours")
+bar_ax.set_ylabel("Total Study Hours")
 bar_ax.tick_params(axis="x", labelrotation=30)
 bar_fig.tight_layout()
 st.pyplot(bar_fig)
 plt.close(bar_fig)
-st.caption("Totals include every response; courses with more responses may have higher totals.")
 
 st.divider()
-# Dynamic CSV histogram: course selection changes the underlying displayed subset.
-st.subheader("4. Distribution of Reported Daily Study Hours")
-csv_courses = sorted(survey_data["Category"].unique().tolist())
-if "csv_selected_courses" not in st.session_state:
-    st.session_state["csv_selected_courses"] = csv_courses.copy()
-else:
-    st.session_state["csv_selected_courses"] = [
-        course for course in st.session_state["csv_selected_courses"]
-        if course in csv_courses
-    ]
+# Dynamic histogram: show all courses or one selected course.
+st.header("4. Daily Study Hours from the Survey")
+if "csv_course" not in st.session_state:
+    st.session_state["csv_course"] = "All courses"
 if "csv_previous_stats" not in st.session_state:
     st.session_state["csv_previous_stats"] = None
 
-st.multiselect("Survey courses to include", csv_courses, key="csv_selected_courses")
-st.slider("Number of histogram bins", min_value=3, max_value=12, value=6,
-          key="csv_histogram_bins")
-filtered_data = survey_data[
-    survey_data["Category"].isin(st.session_state["csv_selected_courses"])
-]
+st.selectbox("Survey course to include", ["All courses"] + csv_courses,
+             key="csv_course")
+selected_course = st.session_state["csv_course"]
+hours = []
+for row in survey_rows:
+    if selected_course == "All courses" or row["Category"] == selected_course:
+        hours.append(float(row["Value"]))
 
-if filtered_data.empty:
-    st.info("Select at least one course to display the histogram and statistics.")
-else:
-    hours = filtered_data["Value"].tolist()
-    histogram_fig, histogram_ax = plt.subplots(figsize=(8, 4))
-    histogram_ax.hist(hours, bins=st.session_state["csv_histogram_bins"],
-                      edgecolor="white")
-    histogram_ax.set_title("Daily Study Hours for Selected Survey Courses")
-    histogram_ax.set_xlabel("Study Hours per Response")
-    histogram_ax.set_ylabel("Number of Responses")
-    histogram_ax.yaxis.get_major_locator().set_params(integer=True)
-    histogram_fig.tight_layout()
-    st.pyplot(histogram_fig)
-    plt.close(histogram_fig)
+hist_fig, hist_ax = plt.subplots(figsize=(8, 4))
+hist_ax.hist(hours, bins=6, edgecolor="white")
+hist_ax.set_title("Daily Study Hours: " + selected_course)
+hist_ax.set_xlabel("Hours Studied per Response")
+hist_ax.set_ylabel("Number of Responses")
+hist_fig.tight_layout()
+st.pyplot(hist_fig)
+plt.close(hist_fig)
 
-    # Extra credit: mean/median update for the same rows shown in the histogram.
-    csv_mean = statistics.mean(hours)
-    csv_median = statistics.median(hours)
-    previous = st.session_state["csv_previous_stats"]
-    mean_change = None
-    median_change = None
-    if previous is not None:
-        mean_change = f"{csv_mean - previous[0]:+.2f} hours"
-        median_change = f"{csv_median - previous[1]:+.2f} hours"
+# Extra credit: compare mean and median with the previous selection.
+mean_hours = statistics.mean(hours)
+median_hours = statistics.median(hours)
+previous_stats = st.session_state["csv_previous_stats"]
+mean_delta = None
+median_delta = None
+if previous_stats is not None:
+    mean_delta = f"{mean_hours - previous_stats[0]:+.2f} hours"
+    median_delta = f"{median_hours - previous_stats[1]:+.2f} hours"
 
-    mean_col, median_col = st.columns(2)
-    with mean_col:
-        st.metric("Mean Hours per Response", f"{csv_mean:.2f} hours",
-                  delta=mean_change, delta_color="off")
-    with median_col:
-        st.metric("Median Hours per Response", f"{csv_median:.2f} hours",
-                  delta=median_change, delta_color="off")
-    st.caption(f"{len(hours)} responses shown. Changes compare with the previous "
-               "displayed histogram. Changing bins alone does not change the mean or median.")
-    st.session_state["csv_previous_stats"] = [csv_mean, csv_median]
+st.metric("Mean Hours per Response", f"{mean_hours:.2f} hours",
+          delta=mean_delta, delta_color="off")
+st.metric("Median Hours per Response", f"{median_hours:.2f} hours",
+          delta=median_delta, delta_color="off")
+st.caption("Changes are compared with the previous course selection.")
+st.session_state["csv_previous_stats"] = [mean_hours, median_hours]
